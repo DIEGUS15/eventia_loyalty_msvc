@@ -1,0 +1,89 @@
+services:
+  mysql-loyalty-db:
+    image: mysql:8.0
+    container_name: eventia_mysql_loyalty_dev
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: eventia_loyalty_db
+      MYSQL_USER: eventia_loyalty_user
+      MYSQL_PASSWORD: eventia_pass
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_loyalty_data_dev:/var/lib/mysql
+    networks:
+      - loyalty-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: eventia_rabbitmq_dev
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: eventia
+      RABBITMQ_DEFAULT_PASS: eventia_pass
+    volumes:
+      - rabbitmq_data_dev:/var/lib/rabbitmq
+    networks:
+      - loyalty-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  loyalty-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eventia_loyalty_dev
+    restart: always
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      DB_HOST: mysql-loyalty-db
+      DB_PORT: 3306
+      DB_NAME: eventia_loyalty_db
+      DB_USER: eventia_loyalty_user
+      DB_PASSWORD: eventia_pass
+      RABBITMQ_URL: amqp://eventia:eventia_pass@rabbitmq:5672
+      NODE_ENV: development
+    depends_on:
+      mysql-loyalty-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - loyalty-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:3002/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  loyalty-network:
+    driver: bridge
+
+volumes:
+  mysql_loyalty_data_dev:
+    driver: local
+  rabbitmq_data_dev:
+    driver: local
